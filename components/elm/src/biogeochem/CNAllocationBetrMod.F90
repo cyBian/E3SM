@@ -1513,7 +1513,8 @@ contains
            cpool_to_xsmrpool(p) = 0.0_r8
 
            ! storage pool turnover
-           xsmrpool_turnover(p) = max(xsmrpool(p) - mr*xsmr_ratio*dt , 0.0_r8) / (10.0*365.0*secspday)
+           ! xsmrpool_turnover(p) = max(xsmrpool(p) - mr*xsmr_ratio*dt , 0.0_r8) / (10.0*365.0*secspday)
+           xsmrpool_turnover(p) = 0.0_r8
          end if
 
          plant_calloc(p) = availc(p)

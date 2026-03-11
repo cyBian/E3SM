@@ -1013,6 +1013,11 @@ contains
     
     use AllocationMod, only : suplnitro, suplnNon
     use AllocationMod, only : suplphos, suplpNon
+
+    ! C.Bian: added for checking the CNP state
+    use elm_varctl      , only : carbon_only          !
+    use elm_varctl      , only : carbonnitrogen_only  !
+    use elm_varctl      , only : carbonphosphorus_only!
     
     ! !ARGUMENTS:
     implicit none
@@ -1058,7 +1063,14 @@ contains
     write(iulog,*) '    precip_downscaling_method = ', precip_downscaling_method
     write(iulog,*) 'input data files:'
     write(iulog,*) '   PFT physiology and parameters file = ',trim(paramfile)
-    write(iulog,*) '   Soil order dependent parameters file = ',trim(fsoilordercon)    
+    write(iulog,*) '   Soil order dependent parameters file = ',trim(fsoilordercon)   
+
+    ! C.Bian: added for check CNP state
+    write(iulog,*) 'checking the C-N-P states:'
+    write(iulog,*) '   carbon_only = ', carbon_only
+    write(iulog,*) '   carbonnitrogen_only = ', carbonnitrogen_only
+    write(iulog,*) '   carbonphosphorus_only = ', carbonphosphorus_only 
+ 
     if (fsurdat == ' ') then
        write(iulog,*) '   fsurdat, surface dataset not set'
     else

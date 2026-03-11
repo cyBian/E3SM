@@ -1053,6 +1053,10 @@ contains
         actual_immob_nh4             => col_nf%actual_immob_nh4                , &
         froot_prof                   => cnstate_vars%froot_prof_patch                         , & ! fine root vertical profile Zeng, X. 2001. Global vegetation root distribution for land modeling. J. Hydrometeor. 2:525-530
         frootc                       => veg_cs%frootc                         , & ! Input:  [real(r8) (:)   ]
+        ! C.Bian: Added frootc_xfer and frootc_storage in Jul 25, 2025
+        frootc_xfer                  => veg_cs%frootc_xfer                    , &
+        frootc_storage               => veg_cs%frootc_storage                 , &
+        ! End of added by C.Bian 
         leafc                        => veg_cs%leafc                          , & ! Input:  [real(r8) (:)   ]
         leafcn                       => veg_vp%leafcn                                     , & ! Input:  [real(r8) (:)   ]  leaf C:N (gC/gN)
         leafcp                       => veg_vp%leafcp                                     , & ! Input:  [real(r8) (:)   ]  leaf C:P (gC/gP)
@@ -1240,8 +1244,11 @@ contains
 
                        ! [gC/m2] fine root C in column =
                        !         fine root C in patch [gC/m2]  * fraction in layer [-] * [m2/m2] patch fraction
-                       veg_rootc_bigleaf(p,j) = frootc(p)*froot_prof(p,j)*veg_pp%wtcol(p)
 
+                       ! C.Bian (07.25): comment the original equation and fix the frootc as the sum of (frootc + frootc_xfer + frootc_storage)
+                       ! veg_rootc_bigleaf(p,j) = frootc(p)*froot_prof(p,j)*veg_pp%wtcol(p)
+                       veg_rootc_bigleaf(p,j) = (frootc(p) + frootc_xfer(p) + frootc_storage(p)) *froot_prof(p,j)*veg_pp%wtcol(p)
+ 
                     end do
                  end if
               end do
@@ -2460,7 +2467,10 @@ contains
                 cpool_to_xsmrpool(p) = 0.0_r8
 
                 ! storage pool turnover
-                xsmrpool_turnover(p) = max(xsmrpool(p) - mr*xsmr_ratio*dt , 0.0_r8) / (nsc_rtime(ivt(p))*365.0_r8*secspday)
+                ! C. Bian: Fixed AR by setting the xsmrpool_turnover = 0 
+                ! xsmrpool_turnover(p) = max(xsmrpool(p) - mr*xsmr_ratio*dt , 0.0_r8) / (nsc_rtime(ivt(p))*365.0_r8*secspday)
+                ! xsmrpool_turnover(p) = 0.0_r8
+                xsmrpool_turnover(p) = max(xsmrpool(p) - mr*xsmr_ratio*dt , 0.0_r8) / dt
              end if
 
              plant_calloc(p) = availc(p)
@@ -3085,6 +3095,8 @@ contains
        do i = 1, n_pcomp
           ip = filter_pcomp(i)
           ft = ft_index(ip)
+          ! fixed by C.Bian
+          ft = ft + 1
           e_km = e_km + e_plant_scalar*veg_rootc(ip,j)/km_nh4_plant(ft)
        end do
 
@@ -3093,6 +3105,8 @@ contains
        do i = 1, n_pcomp
           ip = filter_pcomp(i)
           ft = ft_index(ip)
+          ! fixed by C.Bian
+          ft = ft + 1
           compet_plant(i) = solution_conc / &
                ( km_nh4_plant(ft) * (1._r8 + solution_conc/km_nh4_plant(ft) + e_km))
        end do
@@ -3109,6 +3123,9 @@ contains
        do i = 1, n_pcomp
           ip = filter_pcomp(i)
           ft = ft_index(ip)
+
+          ! fixed by C.Bian
+          ft = ft + 1
 
           ! This is the demand per m3 of the column (not patch)
           ! (for native ELM divide through by the patch weight to get per m3 of patch)
@@ -3191,6 +3208,8 @@ contains
        do i = 1, n_pcomp
           ip = filter_pcomp(i)
           ft = ft_index(ip)
+          ! fixed by C.Bian
+          ft = ft + 1
           e_km = e_km + e_plant_scalar*veg_rootc(ip,j)/km_no3_plant(ft)
        end do
        ! Note we do NOT need to re-compute decompmicc_layer (aready calculated)
@@ -3199,6 +3218,8 @@ contains
        do i = 1, n_pcomp
           ip = filter_pcomp(i)
           ft = ft_index(ip)
+          ! fixed by C.Bian
+          ft = ft + 1
           compet_plant(i) = solution_conc / &
                ( km_no3_plant(ft) * (1._r8 + solution_conc/km_no3_plant(ft) + e_km))
        end do
@@ -3214,6 +3235,9 @@ contains
        do i = 1, n_pcomp
           ip = filter_pcomp(i)
           ft = ft_index(ip)
+
+          ! fixed by C.Bian
+          ft = ft + 1
 
           ! This is the demand per m3 of the column (not patch)
           ! (for native ELM divide through by the patch weight to get per m3 of patch)
@@ -3381,6 +3405,8 @@ contains
        do i = 1,n_pcomp
           ip = filter_pcomp(i)
           ft = ft_index(ip)
+          ! fixed by C.Bian
+          ft = ft + 1
           e_km_p = e_km_p + e_plant_scalar*veg_rootc(ip,j)/km_plant_p(ft)
        end do
 
@@ -3390,6 +3416,9 @@ contains
        do i = 1,n_pcomp
           ip = filter_pcomp(i)
           ft = ft_index(ip)
+          ! fixed by C.Bian
+          ft = ft + 1
+
           compet_plant(i) = solution_pconc / &
                (km_plant_p(ft)*(1._r8 + solution_pconc/km_plant_p(ft) + e_km_p))
        end do
@@ -3404,6 +3433,8 @@ contains
        do i = 1,n_pcomp
           ip = filter_pcomp(i)
           ft = ft_index(ip)
+          ! fixed by C.Bian
+          ft = ft + 1
           plant_pdemand_vr_patch(ip,j) = max(0._r8,vmax_plant_p(ft) * veg_rootc(ip,j) * &
                cp_scalar_runmean(ip) * t_scalar(j) * compet_plant(i))
           col_plant_pdemand_vr(j) = col_plant_pdemand_vr(j) + plant_pdemand_vr_patch(ip,j)

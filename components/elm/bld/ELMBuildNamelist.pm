@@ -524,7 +524,10 @@ sub read_envxml_case_files {
   my %envxml = ();
   if ( defined($opts->{'envxml_dir'}) ) {
       (-d $opts->{'envxml_dir'})  or  fatal_error( "envxml_dir is not a directory" );
-      my @files = glob( $opts->{'envxml_dir'}."/env_*xml" );
+      # Comment the original line with updated perl by C.Bian
+      # my @files = glob( $opts->{'envxml_dir'}."/env_*xml" );
+
+      my @files = bsd_glob( $opts->{'envxml_dir'}."/env_*xml" );
       ($#files >= 0)              or  fatal_error( "there are no env_*xml files in the envxml_dir" );
       foreach my $file (@files) {
           verbose_message( "Open env.xml file: $file" );
@@ -3945,7 +3948,10 @@ sub validate_options {
            # create the @expect array by listing the files in $use_case_dir
            # and strip off the ".xml" part of the filename
            @expect = ();
-           my @files = glob("$opts->{'use_case_dir'}/*.xml");
+
+           # comment by C.Bian 
+           # my @files = glob("$opts->{'use_case_dir'}/*.xml");
+           my @files = bsd_glob("$opts->{'use_case_dir'}/*.xml");
            foreach my $file (@files) {
                $file =~ m{.*/(.*)\.xml};
                &check_use_case_name( $1 );

@@ -604,6 +604,10 @@ module VegetationDataType
     real(r8), pointer :: agnpp                               (:) => null()    ! (gC/m2/s) aboveground NPP
     real(r8), pointer :: bgnpp                               (:) => null()    ! (gC/m2/s) belowground NPP
     real(r8), pointer :: litfall                             (:) => null()    ! (gC/m2/s) litterfall (leaves and fine roots)
+
+    ! Added by C.Bian for comparison with observations
+    real(r8), pointer :: litfall_agb                         (:) => null()    ! (gC/m2/s) litterfall (only calculated the aboveground part)
+
     real(r8), pointer :: vegfire                             (:) => null()    ! (gC/m2/s) patch-level fire loss (obsolete, mark for removal)
     real(r8), pointer :: wood_harvestc                       (:) => null()    ! (gC/m2/s) patch-level wood harvest (to product pools)
     real(r8), pointer :: cinputs                             (:) => null()    ! (gC/m2/s) patch-level carbon inputs (for balance checking)
@@ -617,6 +621,10 @@ module VegetationDataType
     real(r8), pointer :: xsmrpool_recover                    (:) => null()    ! C flux assigned to recovery of negative cpool (gC/m2/s)
     real(r8), pointer :: xsmrpool_c13ratio                   (:) => null()    ! C13/C(12+13) ratio for xsmrpool (proportion)
     real(r8), pointer :: xsmrpool_turnover                   (:) => null()    ! xsmrpool flux to atmosphere due to turnover
+
+    ! C.Bian: Adding for test NSC turnover
+    real(r8), pointer :: xsmrpool_current                    (:) => null()    ! xsmrpool flux to atmosphere due to turnover
+    real(r8), pointer :: xsmrpool_max                        (:) => null()    ! xsmrpool flux to atmosphere due to turnover
 
     ! CN: CLAMP summary (diagnostic) variables, not involved in mass balance
     real(r8), pointer :: frootc_alloc                        (:) => null()    ! (gC/m2/s) patch-level fine root C alloc
@@ -5848,6 +5856,10 @@ module VegetationDataType
        allocate(this%agnpp                               (begp:endp)) ;    this%agnpp                                (:) = spval
        allocate(this%bgnpp                               (begp:endp)) ;    this%bgnpp                                (:) = spval
        allocate(this%litfall                             (begp:endp)) ;    this%litfall                              (:) = spval
+
+       ! Added litfall_agb
+       allocate(this%litfall_agb                         (begp:endp)) ;    this%litfall_agb                          (:) = spval
+
        allocate(this%vegfire                             (begp:endp)) ;    this%vegfire                              (:) = spval
        allocate(this%wood_harvestc                       (begp:endp)) ;    this%wood_harvestc                        (:) = spval
        allocate(this%cinputs                             (begp:endp)) ;    this%cinputs                              (:) = spval
@@ -5860,6 +5872,11 @@ module VegetationDataType
        allocate(this%xsmrpool_recover                    (begp:endp)) ;    this%xsmrpool_recover                     (:) = spval
        allocate(this%xsmrpool_c13ratio                   (begp:endp)) ;    this%xsmrpool_c13ratio                    (:) = spval
        allocate(this%xsmrpool_turnover                   (begp:endp)) ;    this%xsmrpool_turnover                    (:) = spval
+
+      ! C.Bian: adding for test NSC turnover
+       allocate(this%xsmrpool_current                    (begp:endp)) ;    this%xsmrpool_current                     (:) = spval
+       allocate(this%xsmrpool_max                        (begp:endp)) ;    this%xsmrpool_max                         (:) = spval
+
        allocate(this%frootc_alloc                        (begp:endp)) ;    this%frootc_alloc                         (:) = spval
        allocate(this%frootc_loss                         (begp:endp)) ;    this%frootc_loss                          (:) = spval
        allocate(this%leafc_alloc                         (begp:endp)) ;    this%leafc_alloc                          (:) = spval
@@ -6611,6 +6628,35 @@ module VegetationDataType
        call hist_addfld1d (fname='LITFALL', units='gC/m^2/s', &
             avgflag='A', long_name='litterfall (leaves and fine roots)', &
             ptr_patch=this%litfall)
+
+       ! This added by the C.Bian in 2025,Jun 20
+       this%litfall_agb(begp:endp) = spval
+       call hist_addfld1d (fname='LITFALL_AGB', units='gC/m^2/s', &
+            avgflag='A', long_name='litterfall (only calculated the C from aboveground)', &
+            ptr_patch=this%litfall_agb)
+
+       this%xsmrpool_turnover(begp:endp) = spval
+       call hist_addfld1d (fname='XSMRPOOL_TURNOVER', units='gC/m^2/s', &
+            avgflag='A', long_name='xsmrpool_turnover', &
+            ptr_patch=this%xsmrpool_turnover, default='active')
+
+       this%xsmrpool_current(begp:endp) = spval
+       call hist_addfld1d (fname='XSMRPOOL_CURRENT', units='gC/m^2/s', &
+            avgflag='A', long_name='xsmrpool_current', &
+            ptr_patch=this%xsmrpool_current, default='active')
+
+       this%xsmrpool_max(begp:endp) = spval
+       call hist_addfld1d (fname='XSMRPOOL_MAX', units='gC/m^2/s', &
+            avgflag='A', long_name='xsmrpool_max', &
+            ptr_patch=this%xsmrpool_max, default='active')
+       ! C.Bian: End added here 
+      
+       this%cpool_to_xsmrpool(begp:endp) = spval            
+       call hist_addfld1d (fname='CPOOL_TO_XSMRPOOL', units='gC/m^2/s', &
+            avgflag='A', long_name='allocation to XSMRPOOL C', &
+            ptr_patch=this%cpool_to_leafc, default='inactive') 
+
+        ! -------------- End of Added -------------------     
 
        this%vegfire(begp:endp) = spval
        call hist_addfld1d (fname='VEGFIRE', units='gC/m^2/s', &
@@ -8132,6 +8178,10 @@ module VegetationDataType
       fire_closs_col   => col_cf_input%fire_closs_p2c , &
       litfall_patch => this%litfall , &
       litfall_col   => col_cf_input%litfall , &
+      ! ------------------ Added by C.Bian ------------------------
+      litfall_agb_patch => this%litfall_agb , &
+      litfall_agb_col   => col_cf_input%litfall_agb , &
+      ! ------------------ End of added by C.Bian -----------------
       hrv_xsmrpool_to_atm_patch => this%hrv_xsmrpool_to_atm , &
       hrv_xsmrpool_to_atm_col   => col_cf_input%hrv_xsmrpool_to_atm  &
       )
@@ -8235,8 +8285,6 @@ module VegetationDataType
           end if
        end if
 
-
-
        ! net primary production (NPP)
        this%npp(p) = &
             this%gpp(p) - &
@@ -8316,6 +8364,74 @@ module VegetationDataType
               this%hrv_gresp_storage_to_litter(p)         + &
               this%hrv_gresp_xfer_to_litter(p)            + &
               this%hrv_cpool_to_litter(p)
+
+       ! Added the litfall for AGB
+        this%litfall_agb(p) = &
+            this%leafc_to_litter(p)                     + &
+            !this%frootc_to_litter(p)                    + &
+            this%m_leafc_to_litter(p)                   + &
+            this%m_leafc_storage_to_litter(p)           + &
+            this%m_leafc_xfer_to_litter(p)              + &
+            !this%m_frootc_to_litter(p)                  + &
+            !this%m_frootc_storage_to_litter(p)          + &
+            !this%m_frootc_xfer_to_litter(p)             + &
+            this%m_livestemc_to_litter(p)               + &
+            this%m_livestemc_storage_to_litter(p)       + &
+            this%m_livestemc_xfer_to_litter(p)          + &
+            this%m_deadstemc_to_litter(p)               + &
+            this%m_deadstemc_storage_to_litter(p)       + &
+            this%m_deadstemc_xfer_to_litter(p)          + &
+            !this%m_livecrootc_to_litter(p)              + &
+            !this%m_livecrootc_storage_to_litter(p)      + &
+            !this%m_livecrootc_xfer_to_litter(p)         + &
+            !this%m_deadcrootc_to_litter(p)              + &
+            !this%m_deadcrootc_storage_to_litter(p)      + &
+            !this%m_deadcrootc_xfer_to_litter(p)         + &
+            this%m_gresp_storage_to_litter(p)           + &
+            this%m_gresp_xfer_to_litter(p)              + &
+            this%m_leafc_to_litter_fire(p)              + &
+            this%m_leafc_storage_to_litter_fire(p)      + &
+            this%m_leafc_xfer_to_litter_fire(p)         + &
+            this%m_livestemc_to_litter_fire(p)          + &
+            this%m_livestemc_storage_to_litter_fire(p)  + &
+            this%m_livestemc_xfer_to_litter_fire(p)     + &
+            this%m_deadstemc_to_litter_fire(p)          + &
+            this%m_deadstemc_storage_to_litter_fire(p)  + &
+            this%m_deadstemc_xfer_to_litter_fire(p)     + &
+            !this%m_frootc_to_litter_fire(p)             + &
+            !this%m_frootc_storage_to_litter_fire(p)     + &
+            !this%m_frootc_xfer_to_litter_fire(p)        + &
+            !this%m_livecrootc_to_litter_fire(p)         + &
+            !this%m_livecrootc_storage_to_litter_fire(p) + &
+            !this%m_livecrootc_xfer_to_litter_fire(p)    + &
+            !this%m_deadcrootc_to_litter_fire(p)         + &
+            !this%m_deadcrootc_storage_to_litter_fire(p) + &
+            !this%m_deadcrootc_xfer_to_litter_fire(p)    + &
+            this%m_gresp_storage_to_litter_fire(p)      + &
+            this%m_gresp_xfer_to_litter_fire(p)        
+            
+            this%litfall_agb(p) = this%litfall_agb(p) + &
+              this%hrv_leafc_to_litter(p)                 + &
+              this%hrv_leafc_storage_to_litter(p)         + &
+              this%hrv_leafc_xfer_to_litter(p)            + &
+              !this%hrv_frootc_to_litter(p)                + &
+              !this%hrv_frootc_storage_to_litter(p)        + &
+              !this%hrv_frootc_xfer_to_litter(p)           + &
+              this%hrv_livestemc_to_litter(p)             + &
+              this%hrv_livestemc_storage_to_litter(p)     + &
+              this%hrv_livestemc_xfer_to_litter(p)        + &
+              this%hrv_deadstemc_storage_to_litter(p)     + &
+              this%hrv_deadstemc_xfer_to_litter(p)        + &
+              !this%hrv_livecrootc_to_litter(p)            + &
+              !this%hrv_livecrootc_storage_to_litter(p)    + &
+              !this%hrv_livecrootc_xfer_to_litter(p)       + &
+              !this%hrv_deadcrootc_to_litter(p)            + &
+              !this%hrv_deadcrootc_storage_to_litter(p)    + &
+              !this%hrv_deadcrootc_xfer_to_litter(p)       + &
+              this%hrv_gresp_storage_to_litter(p)         + &
+              this%hrv_gresp_xfer_to_litter(p)            + &
+              this%hrv_cpool_to_litter(p)      
+        ! End of added by C.Bian 
        
        ! patch-level fire losses (VEGFIRE)
        this%vegfire(p) = 0._r8
@@ -8473,6 +8589,12 @@ module VegetationDataType
     call p2c(bounds, num_soilc, filter_soilc, &
          litfall_patch(bounds%begp:bounds%endp), &
          litfall_col(bounds%begc:bounds%endc))
+
+    ! Added by C.Bian
+    call p2c(bounds, num_soilc, filter_soilc, &
+         litfall_agb_patch(bounds%begp:bounds%endp), &
+         litfall_agb_col(bounds%begc:bounds%endc))
+     ! End of Added
 
     call p2c(bounds, num_soilc, filter_soilc, &
          hrv_xsmrpool_to_atm_patch(bounds%begp:bounds%endp), &
@@ -8688,6 +8810,13 @@ module VegetationDataType
           this%bgnpp(i)                               = value_patch
           this%agwdnpp(i)                             = value_patch
           this%litfall(i)                             = value_patch
+
+          ! Added by C.Bian
+          this%litfall_agb(i)                         = value_patch
+          this%xsmrpool_current(i)                    = value_patch
+          this%xsmrpool_max(i)                        = value_patch
+          ! End added
+
           this%vegfire(i)                             = value_patch
           this%wood_harvestc(i)                       = value_patch
           this%cinputs(i)                             = value_patch

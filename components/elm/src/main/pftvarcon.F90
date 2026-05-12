@@ -255,6 +255,11 @@ module pftvarcon
   real(r8), allocatable :: i_vc(:)             ! intercept of photosynthesis vcmax ~ leaf N content regression model
   real(r8), allocatable :: s_vc(:)             ! slope of photosynthesis vcmax ~ leaf N content regression model
   real(r8), allocatable :: nsc_rtime(:)        ! non-structural carbon residence time
+
+  ! Added by C.Bian for updating nsc_rtime 
+  real(r8), allocatable :: nsc_rtime1(:)        ! non-structural carbon residence time (slow)
+  real(r8), allocatable :: nsc_rtime2(:)        ! non-structural carbon residence time (fast)
+
   real(r8), allocatable :: pinit_beta1(:)      ! shaping parameter for P initialization
   real(r8), allocatable :: pinit_beta2(:)      ! shaping parameter for P initialization
   ! new stoichiometry
@@ -589,6 +594,11 @@ contains
     allocate( i_vc               (0:mxpft) )
     allocate( s_vc               (0:mxpft) )
     allocate( nsc_rtime          (0:mxpft) )
+
+    ! Added by C.Bian
+    allocate( nsc_rtime1         (0:mxpft) )
+    allocate( nsc_rtime2         (0:mxpft) )
+    
     allocate( pinit_beta1        (0:nsoilorder))
     allocate( pinit_beta2        (0:nsoilorder))
     allocate( alpha_nfix         (0:mxpft) )
@@ -973,6 +983,16 @@ contains
         if ( .not. readv ) call endrun(msg=' ERROR: error in reading in s_vc'//errMsg(__FILE__, __LINE__))
         call ncd_io('nsc_rtime',nsc_rtime, 'read', ncid, readvar=readv)
         if ( .not. readv ) nsc_rtime(:) = 1.0_r8
+
+        ! Added by C.Bian for updating NSC turnover
+        call ncd_io('nsc_rtime1',nsc_rtime1, 'read', ncid, readvar=readv)
+        if ( .not. readv ) call endrun(msg=' ERROR: error in reading in nsc_rtime1'//errMsg(__FILE__, __LINE__))
+        call ncd_io('nsc_rtime2',nsc_rtime2, 'read', ncid, readvar=readv)
+        if ( .not. readv ) call endrun(msg=' ERROR: error in reading in nsc_rtime2'//errMsg(__FILE__, __LINE__))
+        
+        write(iulog, *) 'nsc_rtime1(1:3):', nsc_rtime1(1:3)
+        write(iulog, *) 'nsc_rtime2(1:3):', nsc_rtime2(1:3)
+
         ! new stoichiometry
         call ncd_io('leafcn_obs',leafcn_obs, 'read', ncid, readvar=readv, posNOTonfile=.true.)
         if ( .not. readv ) call endrun(msg=' ERROR: error in reading in pft data'//errMsg(__FILE__, __LINE__))

@@ -116,6 +116,11 @@ module VegetationPropertiesType
      real(r8), pointer :: i_vc(:)          => null()        ! intercept of photosynthesis vcmax ~ leaf n content regression model
      real(r8), pointer :: s_vc(:)          => null()        ! slope of photosynthesis vcmax ~ leaf n content regression model
      real(r8), pointer :: nsc_rtime(:)     => null()        ! non-structural carbon residence time
+
+     ! Added by C.Bian for updating nsc_rtime 
+     real(r8), pointer :: nsc_rtime1(:)     => null()        ! non-structural carbon residence time (slow, yr)
+     real(r8), pointer :: nsc_rtime2(:)     => null()        ! non-structural carbon residence time (fast, yr)
+
      real(r8), pointer :: pinit_beta1(:)   => null()        ! shaping parameter for P initialization
      real(r8), pointer :: pinit_beta2(:)   => null()        ! shaping parameter for P initialization
      real(r8), pointer :: alpha_nfix(:)    => null()        ! fraction of fixed N goes directly to plant
@@ -193,6 +198,10 @@ contains
     use pftvarcon , only : fnr, act25, kcha, koha, cpha, vcmaxha, jmaxha, tpuha
     use pftvarcon , only : lmrha, vcmaxhd, jmaxhd, tpuhd, lmrse, qe, theta_cj
     use pftvarcon , only : bbbopt, mbbopt, nstor, br_xr, tc_stress, lmrhd
+
+    ! C.Bian:
+    use pftvarcon , only : nsc_rtime1, nsc_rtime2
+
     ! new properties for flexible PFT (NGEE Arctic IM4)
     use pftvarcon , only : climatezone, nonvascular, graminoid, iscft,needleleaf, nfixer
     ! snow/vegetation interactions (NGEE Arctic IM3)
@@ -309,6 +318,10 @@ contains
     allocate( this%mbbopt(0:numpft))                             ; this%mbbopt(:)                =spval
     allocate( this%nstor(0:numpft))                              ; this%nstor(:)                 =spval
     allocate( this%br_xr(0:numpft))                              ; this%br_xr(:)                 =spval
+
+    ! Added by C.Bian
+    allocate( this%nsc_rtime1(0:numpft))                         ; this%nsc_rtime1(:)            =spval
+    allocate( this%nsc_rtime2(0:numpft))                         ; this%nsc_rtime2(:)            =spval
 
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
     allocate(this%km_decomp_nh4)
@@ -449,6 +462,10 @@ contains
         this%vmax_nfix(m)      = vmax_nfix(m)
         this%km_nfix(m)        = km_nfix(m)
         this%vmax_ptase(m)     = vmax_ptase(m)
+
+        ! C.Bian
+        this%nsc_rtime1(m)      = nsc_rtime1(m)
+        this%nsc_rtime2(m)      = nsc_rtime2(m)
 
         do j = 1 , nlevdecomp
            this%decompmicc_patch_vr(m,j) = decompmicc_patch_vr(j,m)

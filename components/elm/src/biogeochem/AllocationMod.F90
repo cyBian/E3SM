@@ -1869,6 +1869,10 @@ contains
     use pftvarcon        , only:  iscft, grperc, grpnow
     use elm_varpar       , only:  nlevdecomp
     use elm_varcon       , only: nitrif_n2o_loss_frac, secspday
+
+    ! C.Bian in 2026-Apr06
+    use elm_varcon       , only: dzsoi
+
     !
     ! !ARGUMENTS:
     type(bounds_type)        , intent(in)    :: bounds
@@ -1910,6 +1914,13 @@ contains
     real(r8):: cp_stoich_var=0.4    ! variability of CP ratio
     real(r8):: curmr, curmr_ratio   !xsmrpool temporary variables
     real(r8):: xsmr_ratio           ! ratio of mr comes from non-structue carobn hydrate pool
+
+   ! Added by C.Bian on Apr16-2026 for calculating NSC_turnover
+    real(r8):: f_xsmrpool_max = 0.03_r8 ! set the maximum fraction of NSC pool in biomass (doi: 0.1111/nph.15462)
+    real(r8):: fW_scalar(bounds%begp : bounds%endp)
+    real(r8):: fT_scalar(bounds%begp : bounds%endp)
+    real(r8):: dz(bounds%begp : bounds%endp)
+    real(r8):: f_env(bounds%begp : bounds%endp)
     !-----------------------------------------------------------------------
 
     associate(                                                                                 &
@@ -2025,6 +2036,16 @@ contains
          leafc                        => veg_cs%leafc                          , &
          leafn                        => veg_ns%leafn                        , &
          leafp                        => veg_ps%leafp                      , &
+
+         ! C.Bian: Added for update xsmrpool_turnover
+         totvegc                      => veg_cs%totvegc                    , &  ! Input: total vegetation C 
+         t_scalar                     => col_cf%t_scalar                   , &
+         ! C.Bian: adding for testing NSC turnover
+         xsmrpool_current             => veg_cf%xsmrpool_current                , &
+         xsmrpool_max                 => veg_cf%xsmrpool_max                    , &
+         nsc_rtime1                   => veg_vp%nsc_rtime1                      , &
+         nsc_rtime2                   => veg_vp%nsc_rtime2                      , &
+
          ! for debug
          plant_n_uptake_flux          => col_nf%plant_n_uptake_flux                 , &
          plant_p_uptake_flux          => col_pf%plant_p_uptake_flux               , &
@@ -2470,7 +2491,43 @@ contains
                 ! C. Bian: Fixed AR by setting the xsmrpool_turnover = 0 
                 ! xsmrpool_turnover(p) = max(xsmrpool(p) - mr*xsmr_ratio*dt , 0.0_r8) / (nsc_rtime(ivt(p))*365.0_r8*secspday)
                 ! xsmrpool_turnover(p) = 0.0_r8
-                xsmrpool_turnover(p) = max(xsmrpool(p) - mr*xsmr_ratio*dt , 0.0_r8) / dt
+               !  xsmrpool_turnover(p) = max(xsmrpool(p) - mr*xsmr_ratio*dt , 0.0_r8) / dt
+
+                ! C.Bian: set the nsc_rtime to 7yrs based on the observations from (10.1111/nph.13273) 
+                ! The maximum of NSC pool: totvegc * f_xsmrpool_max (10.1111/nph.15462)
+
+               ! calculste the depth-averaged temperature and water scalar
+                fW_scalar(p) = 0.0_r8
+                fT_scalar(p) = 0.0_r8
+                dz(p) = 0.0_r8
+
+                do j = 1 , nlevdecomp
+                 fW_scalar(p) = fW_scalar(p) + w_scalar(c,j) * dzsoi(j)
+                 fT_scalar(p) = fT_scalar(p) + t_scalar(c,j) * dzsoi(j)
+                 dz(p) = dz(p) + dzsoi(j)
+                end do
+
+                fW_scalar(p) = fW_scalar(p) / max(dz(p), 1.0e-6_r8)
+                fT_scalar(p) = fT_scalar(p) / max(dz(p), 1.0e-6_r8)
+
+               ! adjust scalar for numerical stability purposes
+                fW_scalar(p) = max( 0.01_r8, min( 1.0_r8, fW_scalar(p) ) )
+                fT_scalar(p) = max( 0.01_r8, min( 1.0_r8, fT_scalar(p) ) )
+
+                f_env(p) = fW_scalar(p) * fT_scalar(p)
+
+                xsmrpool_current(p) = xsmrpool(p) - mr*xsmr_ratio*dt
+                xsmrpool_max(p) = totvegc(p) * f_xsmrpool_max
+
+               ! ! for the second term, change the dominanter from dt to k2_nsc to make the excess carbon 
+               !                      ! release from hour to a few days levels 
+                if (xsmrpool_current(p) > xsmrpool_max(p)) then
+                  xsmrpool_turnover(p) = (xsmrpool_max(p)/(nsc_rtime1(ivt(p))*365.0_r8*secspday)) * f_env(p) + &
+                                       (max((xsmrpool_current(p)-xsmrpool_max(p)), 0.0_r8)/(nsc_rtime2(ivt(p)) * 365.0_r8*secspday)) * f_env(p) 
+                else
+                  xsmrpool_turnover(p) = (xsmrpool_current(p)/(nsc_rtime1(ivt(p))*365.0_r8*secspday)) * f_env(p)
+                end if
+
              end if
 
              plant_calloc(p) = availc(p)
@@ -3202,7 +3259,30 @@ contains
        ! first need to convert concentration to per soil water based
        ! ---------------------------------------------------------------------------------
 
-       solution_conc = smin_no3_vr(j) / h2osoi_vol(j) ! convert to per soil water based
+       ! C.Bian: 
+       if (.not.(h2osoi_vol(j) == h2osoi_vol(j))) then
+           write(iulog,*) 'NaN h2osoi_vol: j=', j, ' h2osoi_vol=', h2osoi_vol(j)
+           write(iulog,*) 'smin_no3_vr=', smin_no3_vr(j)
+         !   call endrun('NaN h2osoi_vol in NO3 competition')
+       end if
+
+       if (h2osoi_vol(j) <= 0._r8) then
+           write(iulog,*) 'Nonpositive h2osoi_vol: j=', j, ' h2osoi_vol=', h2osoi_vol(j)
+           write(iulog,*) 'smin_no3_vr=', smin_no3_vr(j)
+           write(iulog,*) 'onpositive h2osoi_vol in NO3 competition'
+         !   h2osoi_vol(j) = max(h2osoi_vol(j), 1.0e-6_r8)
+
+         !   call endrun('Nonpositive h2osoi_vol in NO3 competition')
+       end if
+
+       ! solution_conc = smin_no3_vr(j) / h2osoi_vol(j) ! convert to per soil water based
+       ! solution_conc = smin_no3_vr(j) / max(h2osoi_vol(j), 1.0e-6_r8) ! convert to per soil water based
+       if (h2osoi_vol(j) <= 0._r8) then
+           solution_conc = 0._r8
+       else
+           solution_conc = smin_no3_vr(j) / h2osoi_vol(j)
+           !write(iulog,*) 'solution_conc=',solution_conc,'max(h2osoi_vol(j), 1.0e-6_r8)=',max(h2osoi_vol(j), 1.0e-6_r8)
+       end if 
 
        e_km = 0._r8
        do i = 1, n_pcomp
@@ -3399,7 +3479,12 @@ contains
        ! plant, microbial decomposer, mineral surface compete for P
        ! loop over each pft within the same column
        ! calculate competition coefficients for N/P
-       solution_pconc  = max(0._r8,solutionp_vr(j)/h2osoi_vol(j)) ! convert to per soil water based
+       ! C.Bian
+       if (h2osoi_vol(j) <= 0._r8) then
+           solution_pconc = 0._r8
+       else
+           solution_pconc  = max(0._r8,solutionp_vr(j)/h2osoi_vol(j)) ! convert to per soil water based
+       end if
 
        e_km_p = 0._r8
        do i = 1,n_pcomp

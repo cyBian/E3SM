@@ -897,7 +897,7 @@ contains
             else
                call Photosynthesis (bounds, fn, filterp, &
                         svpts(begp:endp), eah(begp:endp), o2(begp:endp), co2(begp:endp), rb(begp:endp), btran(begp:endp), &
-                        dayl_factor(begp:endp), atm2lnd_vars,  surfalb_vars, solarabs_vars, &
+                        dayl_factor(begp:endp), atm2lnd_vars, soilstate_vars, surfalb_vars, solarabs_vars, &
                         canopystate_vars, photosyns_vars, 'sun')
             end if
 
@@ -919,7 +919,7 @@ contains
             if ( .not. use_hydrstress ) then
               call Photosynthesis (bounds, fn, filterp, &
                    svpts(begp:endp), eah(begp:endp), o2(begp:endp), co2(begp:endp), rb(begp:endp), btran(begp:endp), &
-                   dayl_factor(begp:endp), atm2lnd_vars,surfalb_vars, solarabs_vars, &
+                   dayl_factor(begp:endp), atm2lnd_vars, soilstate_vars, surfalb_vars, solarabs_vars, &
                    canopystate_vars, photosyns_vars, 'sha')
             end if
 

@@ -211,7 +211,7 @@ contains
   !------------------------------------------------------------------------------
   subroutine Photosynthesis ( bounds, fn, filterp, &
        esat_tv, eair, oair, cair, rb, btran, &
-       dayl_factor, atm2lnd_vars, surfalb_vars, solarabs_vars, &
+       dayl_factor, atm2lnd_vars, soilstate_vars, surfalb_vars, solarabs_vars, &
        canopystate_vars, photosyns_vars, phase)
     !
     ! !DESCRIPTION:
@@ -226,6 +226,9 @@ contains
     use elm_varcon     , only : rgas, tfrz
     use elm_varctl     , only : carbon_only
     use pftvarcon      , only : vcmax_np1, vcmax_np2, vcmax_np3, vcmax_np4, jmax_np1, jmax_np2, jmax_np3
+
+    ! C.Bian, added for tuning vcmax25top
+    use elm_varpar     , only : mxpft
     !
     ! !ARGUMENTS:
     type(bounds_type)      , intent(in)    :: bounds
@@ -242,6 +245,7 @@ contains
     type(surfalb_type)     , intent(inout)    :: surfalb_vars
     type(solarabs_type)    , intent(inout)    :: solarabs_vars
     type(canopystate_type) , intent(inout)    :: canopystate_vars
+    type(soilstate_type)   , intent(in)       :: soilstate_vars
     type(photosyns_type)   , intent(inout)    :: photosyns_vars
     character(len=3)       , intent(in)    :: phase                          ! 'sun' or 'sha'
 
@@ -298,7 +302,7 @@ contains
     real(r8) :: theta_ip          ! empirical curvature parameter for ap photosynthesis co-limitation
 
     ! Other
-    integer  :: f,p,c,t,iv        ! indices
+    integer  :: f,p,c,t,iv,g        ! indices
     real(r8) :: cf                ! s m**2/umol -> s/m
     real(r8) :: rsmax0            ! maximum stomatal resistance [s/m]
     real(r8) :: gb                ! leaf boundary layer conductance (m/s)
@@ -359,10 +363,17 @@ contains
     real(r8) :: sum_nscaler
     real(r8) :: total_lai
     integer  :: rad_layers_patch
+
+   ! C.Bian: Added for store the threshold on Oct 28, 2025
+    real(r8) :: lnc_th(0:mxpft)
+    real(r8) :: lpc_th(0:mxpft) ! threshold for lnc and lpc used to constrain the equation of Vcmaxtop
+
     !------------------------------------------------------------------------------
     ! Temperature and soil water response functions
 
     associate(                                                       &
+         !vcmax_np1_grc => soilstate_vars%vcmax_np1_tune        , & ! example, define your gridcell level parameter
+         !vcmax_np2_grc => soilstate_vars%vcmax_np2_tune        , &
          c3psn         => veg_vp%c3psn                         , & ! Input:  [real(r8) (:)   ]  photosynthetic pathway: 0. = c4, 1. = c3
          leafcn        => veg_vp%leafcn                        , & ! Input:  [real(r8) (:)   ]  leaf C:N (gC/gN)
          flnr          => veg_vp%flnr                          , & ! Input:  [real(r8) (:)   ]  fraction of leaf N in the Rubisco enzyme (gN Rubisco / gN leaf)
@@ -548,6 +559,7 @@ contains
 
       do f = 1, fn
          p = filterp(f)
+         g = veg_pp%gridcell(p)
          if ( .not. nu_com_leaf_physiology) then
             ! Leaf nitrogen concentration at the top of the canopy (g N leaf / m**2 leaf)
             lnc(p) = 1._r8 / (slatop(veg_pp%itype(p)) * leafcn(veg_pp%itype(p)))
@@ -602,8 +614,16 @@ contains
                   ! dividing by LAI to convert total leaf nitrogen
                   ! from m2 ground to m2 leaf; dividing by sum_nscaler to
                   ! convert total leaf N to leaf N at canopy top
-                  lnc(p) = leafn(p) / (total_lai * sum_nscaler)
-                  lnc(p) = min(max(lnc(p),0.25_r8),3.0_r8) ! based on doi: 10.1002/ece3.1173
+
+                  ! C.Bian: fixed the leafn as the sum of leafn + leafn_xfer + leafn_storage on Nov1, 2025
+                  ! Comment the original code
+                  ! lnc(p) = leafn(p) / (total_lai * sum_nscaler)
+                  ! lnc(p) = min(max(lnc(p),0.25_r8),3.0_r8) ! based on doi: 10.1002/ece3.1173
+
+                  lnc(p) = (leafn(p)+leafn_xfer(p)+leafn_storage(p)) / (total_lai * sum_nscaler)
+                  ! lnc(p) = min(max(lnc(p),0.25_r8),3.0_r8) ! based on doi: 10.1002/ece3.1173
+                  lnc(p) = min(max(lnc(p),0.25_r8),20.0_r8) !C.Bian, based on doi: 10.1111/1365-2745.13967
+                  ! C.Bian: End of fixed at Nov 1, 2025
                else
                   lnc(p) = 0.0_r8
                end if
@@ -645,13 +665,61 @@ contains
                      ! dividing by LAI to convert total leaf nitrogen
                      ! from m2 ground to m2 leaf; dividing by sum_nscaler to
                      ! convert total leaf N to leaf N at canopy top
-                     lnc(p) = leafn(p) / (total_lai * sum_nscaler)
-                     lpc(p) = leafp(p) / (total_lai * sum_nscaler)
-                     lnc(p) = min(max(lnc(p),0.25_r8),3.0_r8) ! based on doi: 10.1002/ece3.1173
-                     lpc(p) = min(max(lpc(p),0.014_r8),0.85_r8) ! based on doi: 10.1002/ece3.1173
-                     vcmax25top = exp(vcmax_np1(veg_pp%itype(p)) + vcmax_np2(veg_pp%itype(p))*log(lnc(p)) + &
-                          vcmax_np3(veg_pp%itype(p))*log(lpc(p)) + vcmax_np4(veg_pp%itype(p))*log(lnc(p))*log(lpc(p)))&
+                     ! C.Bian: fixed the leafn as the sum of leafn + leafn_xfer + leafn_storage on Nov1, 2025
+                     ! Comment the original code
+                     ! lnc(p) = leafn(p) / (total_lai * sum_nscaler)
+                     ! lpc(p) = leafp(p) / (total_lai * sum_nscaler)
+
+                     lnc(p) = (leafn(p) + leafn_xfer(p) + leafn_storage(p)) / (total_lai * sum_nscaler)
+                     lpc(p) = (leafp(p) + leafp_xfer(p) + leafp_storage(p)) / (total_lai * sum_nscaler)
+
+                     ! lnc(p) = min(max(lnc(p),0.25_r8),3.0_r8) ! based on doi: 10.1002/ece3.1173
+                     ! lpc(p) = min(max(lpc(p),0.014_r8),0.85_r8) ! based on doi: 10.1002/ece3.1173
+
+                       lnc(p) = min(max(lnc(p),0.25_r8),20.0_r8) ! C.Bian, based on doi: 10.1111/1365-2745.13967 
+                       lpc(p) = min(max(lpc(p),0.014_r8),5.67_r8) ! Based on the previous NP ratio of 3.0/0.85                    
+
+                     ! example, define your gridcell level parameter
+                     ! vcmax25top = exp(vcmax_np1(veg_pp%itype(p)) + vcmax_np2(veg_pp%itype(p))*log(lnc(p)) + &
+                     ! vcmax25top = exp(vcmax_np1_grc(g) + vcmax_np2_grc((g))*log(lnc(p)) + &
+
+                     ! C.Bian: Fixed for changing the vcmax25top to avoid the unrealistic high value at minor value
+                     ! The equation used to caltulate the vcmax can be expressed as:
+                     ! ln(vcmax25top) = vcmax_np1 + vcmax_np2 * ln(lnc) + vcmax_np3 * ln(lpc) + vcmax_np4 * ln(lnc) * ln(lpc)
+                     ! vcmax25top may increase when the lnc and lnp are very small, so we Fixed the equation by setting the vcmax_np4 -> 0.001 
+                     ! to avoid the unrealistic increase when the lnc and lnp are less than the threhold.
+                     ! And the threshold can be expressed as: 
+                     ! lnc_th = exp(-1 * vcmax_np3/vcmax_np4)
+                     ! lpc_th = exp(-1 * vcmax_np2/vcmax_np4)
+
+                     ! Comment the original equation
+                     ! vcmax25top = exp(vcmax_np1_grc(g) + vcmax_np2(veg_pp%itype(p))*log(lnc(p)) + & 
+                     !      vcmax_np3(veg_pp%itype(p))*log(lpc(p)) + vcmax_np4(veg_pp%itype(p))*log(lnc(p))*log(lpc(p)))&
+                     !      * dayl_factor(p)
+                     !write(iulog,*) 'vcmax_np1_grc',g,vcmax_np1_grc(g),'vcmax_np2_grc',vcmax_np2_grc, 'vcmax25top',vcmax25top
+
+                     ! Calculate the threshold of lnc and lpc:
+                     lnc_th(0:mxpft) = 0.52_r8
+                     lpc_th(0:mxpft) = 0.039_r8
+                     lnc_th(veg_pp%itype(p)) = exp(-1.0_r8 * vcmax_np3(veg_pp%itype(p))/vcmax_np4(veg_pp%itype(p)))
+                     lpc_th(veg_pp%itype(p)) = exp(-1.0_r8 * vcmax_np2(veg_pp%itype(p))/vcmax_np4(veg_pp%itype(p)))
+
+                     if (lnc(p) < lnc_th(veg_pp%itype(p)) .and. lpc(p) < lpc_th(veg_pp%itype(p))) then
+                           !vcmax25top = exp(vcmax_np1_grc(g) + vcmax_np2(veg_pp%itype(p))*log(lnc(p)) + &
+                          vcmax25top = exp(vcmax_np1(veg_pp%itype(p)) + vcmax_np2(veg_pp%itype(p))*log(lnc(p)) + &
+                          vcmax_np3(veg_pp%itype(p))*log(lpc(p)) + 0.001_r8 * log(lnc(p))*log(lpc(p)))&
                           * dayl_factor(p)
+                     else
+                        !vcmax25top = exp(vcmax_np1_grc(g) + vcmax_np2(veg_pp%itype(p))*log(lnc(p)) + &
+                         vcmax25top = exp(vcmax_np1(veg_pp%itype(p)) + vcmax_np2(veg_pp%itype(p))*log(lnc(p)) + &
+                           vcmax_np3(veg_pp%itype(p))*log(lpc(p)) + vcmax_np4(veg_pp%itype(p))*log(lnc(p))*log(lpc(p)))&
+                           * dayl_factor(p)
+                     end if
+                     ! C.Bian: End of tuned
+                     !write(iulog,*) 'lnc_th(veg_pp%itype(p)):',lnc_th(veg_pp%itype(p)),'lpc_th(veg_pp%itype(p)):',lpc_th(veg_pp%itype(p))
+                     !write(iulog,*) 'lnc(p):',lnc(p),'lpc(p):',lpc(p)
+                     !write(iulog,*) 'vcmax_np1_grc:',g,vcmax_np1_grc(g),'vcmax25top:',vcmax25top
+
                      jmax25top = exp(jmax_np1 + jmax_np2*log(vcmax25top) + jmax_np3*log(lpc(p))) * dayl_factor(p)
                      vcmax25top = min(max(vcmax25top, 10.0_r8), 150.0_r8)
                      jmax25top = min(max(jmax25top, 10.0_r8), 250.0_r8)
@@ -1684,7 +1752,7 @@ contains
     real(r8) :: theta_ip       ! empirical curvature parameter for ap photosynthesis co-limitation
 
     ! Other
-    integer  :: f,p,c,t,iv          ! indices
+    integer  :: f,p,c,t,iv,g          ! indices
     integer, parameter :: sun = 1 ! index for sunlit leaves
     integer, parameter :: sha = 2 ! index for shaded leaves
 
@@ -1828,7 +1896,9 @@ contains
 
 
     associate(                                                 &
-            qflx_rootsoi_col    => col_wf%qflx_rootsoi    , & ! Output: [real(r8) (:,:) ]
+         !vcmax_np1_grc => soilstate_inst%vcmax_np1_tune        , & ! example, define your gridcell level parameter
+         ! vcmax_np2_grc => soilstate_inst%vcmax_np2_tune        , &
+         qflx_rootsoi_col    => col_wf%qflx_rootsoi    , & ! Output: [real(r8) (:,:) ]
          k_soil_root  => soilstate_inst%k_soil_root_patch    , & ! Input: [real(r8) (:,:) ]  soil-root interface conductance (mm/s)
          hk_l         =>    soilstate_inst%hk_l_col          , & ! Input: [real(r8) (:,:) ]  hydraulic conductivity (mm/s)
          hksat        => soilstate_inst%hksat_col            , & ! Input: [real(r8) (:,:) ]  hydraulic conductivity at saturation (mm H2O /s)
@@ -2140,8 +2210,14 @@ contains
                   ! dividing by LAI to convert total leaf nitrogen
                   ! from m2 ground to m2 leaf; dividing by sum_nscaler to
                   ! convert total leaf N to leaf N at canopy top
-                  lnc(p) = leafn(p) / (total_lai * sum_nscaler)
-                  lnc(p) = min(max(lnc(p),0.25_r8),3.0_r8) ! based on doi: 10.1002/ece3.1173
+                  
+                  ! C.Bian: fixed the leafn as the sum of leafn + leafn_xfer + leafn_storage on Nov1, 2025
+                  ! Comment the original code
+                  ! lnc(p) = leafn(p) / (total_lai * sum_nscaler)
+                  lnc(p) = (leafn(p) + leafn_xfer(p) + leafn_storage(p)) / (total_lai * sum_nscaler)
+                  ! lnc(p) = min(max(lnc(p),0.25_r8),3.0_r8) ! based on doi: 10.1002/ece3.1173
+                  lnc(p) = min(max(lnc(p),0.25_r8),20.0_r8) ! C.Bian: based on 10.1111/1365-2745.13967
+                  ! C.Bian: End of comment 
                else
                   lnc(p) = 0.0_r8
                end if
@@ -2185,13 +2261,28 @@ contains
                      ! dividing by LAI to convert total leaf nitrogen
                      ! from m2 ground to m2 leaf; dividing by sum_nscaler to
                      ! convert total leaf N to leaf N at canopy top
-                     lnc(p) = leafn(p) / (total_lai * sum_nscaler)
-                     lpc(p) = leafp(p) / (total_lai * sum_nscaler)
-                     lnc(p) = min(max(lnc(p),0.25_r8),3.0_r8) ! based on doi:10.1002/ece3.1173
-                     lpc(p) = min(max(lpc(p),0.014_r8),0.85_r8) ! based on doi:10.1002/ece3.1173
+                     
+                     ! C.Bian: fixed the leafn as the sum of leafn + leafn_xfer + leafn_storage on Nov1, 2025
+                     ! Comment the original code
+                     ! lnc(p) = leafn(p) / (total_lai * sum_nscaler)
+                     ! lpc(p) = leafp(p) / (total_lai * sum_nscaler)
+
+                     lnc(p) = (leafn(p) + leafn_xfer(p) + leafn_storage(p)) / (total_lai * sum_nscaler)
+                     lpc(p) = (leafp(p) + leafp_xfer(p) + leafp_storage(p)) / (total_lai * sum_nscaler)
+                     ! C.Bian: fixed the leafn and leafp on Nov 1, 2025
+
+                     ! lnc(p) = min(max(lnc(p),0.25_r8),3.0_r8) ! based on doi:10.1002/ece3.1173
+                     ! lpc(p) = min(max(lpc(p),0.014_r8),0.85_r8) ! based on doi:10.1002/ece3.1173
+
+                      lnc(p) = min(max(lnc(p),0.25_r8),20.0_r8) ! C.Bian: based on 10.1111/1365-2745.13967
+                      lpc(p) = min(max(lpc(p),0.014_r8),5.67_r8) ! based on the previous np ratio 3.0/0.85
+
+                     ! example: use gridcell-level parameters 
                      vcmax25top = exp(vcmax_np1(veg_pp%itype(p)) + vcmax_np2(veg_pp%itype(p))*log(lnc(p)) + &
+                     !vcmax25top = exp(vcmax_np1_grc(g) + vcmax_np1_grc((g))*log(lnc(p)) + &
                           vcmax_np3(veg_pp%itype(p))*log(lpc(p)) + vcmax_np4(veg_pp%itype(p))*log(lnc(p))*log(lpc(p)))&
                           * dayl_factor(p)
+                     !write(iulog,*) 'vcmax_np1_grc',g,vcmax_np1_grc(g),'vcmax_np2_grc',vcmax_np2_grc, 'vcmax25top',vcmax25top
                      jmax25top = exp(jmax_np1 + jmax_np2*log(vcmax25top) + jmax_np3*log(lpc(p))) * dayl_factor(p)
                      vcmax25top = min(max(vcmax25top, 10.0_r8), 150.0_r8)
                      jmax25top = min(max(jmax25top, 10.0_r8), 250.0_r8)

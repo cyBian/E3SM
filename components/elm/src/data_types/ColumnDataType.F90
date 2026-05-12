@@ -643,6 +643,10 @@ module ColumnDataType
     real(r8), pointer :: fire_closs                            (:)     => null() ! column (gC/m2/s) total patch-level fire C loss
     real(r8), pointer :: fire_decomp_closs                     (:)     => null() ! column (gC/m2/s) carbon loss to fire for decomposable pools
     real(r8), pointer :: litfall                               (:)     => null() ! column (gC/m2/s) total patch-level litterfall C loss (p2c)
+
+    ! Added by C.Bian
+    real(r8), pointer :: litfall_agb                           (:)     => null() ! column (gC/m2/s) total patch-level litterfall C loss from aboveground (p2c)
+
     real(r8), pointer :: vegfire                               (:)     => null() ! column (gC/m2/s) patch-level fire loss (obsolete, mark for removal) (p2c)
     real(r8), pointer :: wood_harvestc                         (:)     => null() ! column (p2c)
     real(r8), pointer :: hrv_xsmrpool_to_atm                   (:)     => null() ! column excess MR pool harvest mortality (gC/m2/s) (p2c)
@@ -6093,6 +6097,10 @@ contains
     allocate(this%fire_closs                        (begc:endc))                  ; this%fire_closs                   (:)   = spval
     allocate(this%fire_decomp_closs                 (begc:endc))                  ; this%fire_decomp_closs            (:)   = spval
     allocate(this%litfall                           (begc:endc))                  ; this%litfall                      (:)   = spval
+
+    ! C.Bian added the litfall from aboveground 
+    allocate(this%litfall_agb                       (begc:endc))                  ; this%litfall_agb                  (:)   = spval
+    
     allocate(this%vegfire                           (begc:endc))                  ; this%vegfire                      (:)   = spval
     allocate(this%wood_harvestc                     (begc:endc))                  ; this%wood_harvestc                (:)   = spval
     allocate(this%hrv_xsmrpool_to_atm               (begc:endc))                  ; this%hrv_xsmrpool_to_atm          (:)   = spval
@@ -7799,6 +7807,10 @@ contains
        this%npp(i)                   = value_column
        this%fire_closs(i)            = value_column
        this%litfall(i)               = value_column
+
+       ! C.Bian
+       this%litfall_agb(i)           = value_column
+
        this%vegfire(i)               = value_column
        this%wood_harvestc(i)         = value_column
        this%hrv_xsmrpool_to_atm(i)   = value_column
@@ -8687,9 +8699,6 @@ contains
               ptr_col=this%actual_immob_nh4_vr, default='inactive')
     end if
 
-    ! C.Bian: changes the 'SMIN_NH4_TO_PLANT' and 'SMIN_NO3_TO_PLANT' to
-    ! 'SMIN_NO3_TO_PLANT_vr' and 'SMIN_NH4_TO_PLANT_vr' to avoid repeated
- 
     if ((nlevdecomp_full > 1) .or. (use_pflotran .and. pf_cmode)) then
        this%smin_no3_to_plant_vr(begc:endc,:) = spval
         call hist_addfld_decomp (fname='SMIN_NO3_TO_PLANT_vr', units='gN/m^3/s', type2d='levdcmp', &
@@ -8976,19 +8985,17 @@ contains
         call hist_addfld1d (fname='PLANT_NDEMAND_COL', units='gN/m^2/s', &
              avgflag='A', long_name='N flux required to support initial GPP', &
               ptr_col=this%plant_ndemand)
-   
-    ! C.Bian: move SMIN_NH4_TO_PLANT and SMIN_NO3_TO_PLANT to here 
+
+    ! move SMIN_NH4_TO_PLANT and SMIN_NO3_TO_PLANT to here
     this%smin_nh4_to_plant(begc:endc) = spval
         call hist_addfld1d (fname='SMIN_NH4_TO_PLANT', units='gN/m^2/s', &
              avgflag='A', long_name='plant uptake of NH4', &
               ptr_col=this%smin_nh4_to_plant) ! default='inactive'
-    
+
     this%smin_no3_to_plant(begc:endc) = spval
         call hist_addfld1d (fname='SMIN_NO3_TO_PLANT', units='gN/m^2/s', &
              avgflag='A', long_name='plant uptake of NO3', &
-              ptr_col=this%smin_no3_to_plant) ! default='inactive'
-
-    ! C.Bian: end of move
+              ptr_col=this%smin_no3_to_plant) !,default='inactive'
 
     if (use_pflotran.and.pf_cmode) then
        this%f_ngas_decomp(begc:endc) = spval
@@ -9016,17 +9023,17 @@ contains
               avgflag='A', long_name='soil n2 exchange flux', &
                ptr_col=this%f_n2_soil)
 
-     ! ! C.Bian: comment the following smin_nh4_to_plant, and smin_no3_to_plant and move them to above
-     !  this%smin_nh4_to_plant(begc:endc) = spval
-     !   call hist_addfld1d (fname='SMIN_NH4_TO_PLANT', units='gN/m^2/s', &
-     !        avgflag='A', long_name='plant uptake of NH4', &
-     !         ptr_col=this%smin_nh4_to_plant, default='inactive')
+       ! C.Bian: comment the following smin_nh4_to_plant, and smin_no3_to_plant and move them to ablve 
+      !  this%smin_nh4_to_plant(begc:endc) = spval
+      !   call hist_addfld1d (fname='SMIN_NH4_TO_PLANT', units='gN/m^2/s', &
+      !        avgflag='A', long_name='plant uptake of NH4', &
+      !         ptr_col=this%smin_nh4_to_plant) ! default='inactive'
 
-     !  this%smin_no3_to_plant(begc:endc) = spval
-     !   call hist_addfld1d (fname='SMIN_NO3_TO_PLANT', units='gN/m^2/s', &
-     !        avgflag='A', long_name='plant uptake of NO3', &
-     !         ptr_col=this%smin_no3_to_plant, default='inactive')
-     ! ! End comment by C.Bian
+      !  this%smin_no3_to_plant(begc:endc) = spval
+      !   call hist_addfld1d (fname='SMIN_NO3_TO_PLANT', units='gN/m^2/s', &
+      !        avgflag='A', long_name='plant uptake of NO3', &
+      !         ptr_col=this%smin_no3_to_plant) !,default='inactive'
+       ! End comment by C.Bian
 
        this%f_ngas_decomp_vr(begc:endc,:) = spval
         call hist_addfld_decomp (fname='F_NGAS_DECOMP'//trim(vr_suffix), units='gN/m^3/s',  type2d='levdcmp', &
